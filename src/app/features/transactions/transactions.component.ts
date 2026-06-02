@@ -1,24 +1,28 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { Observable } from 'rxjs';
 import { TransactionService } from '../../core/services/transaction.service';
 import { CategoryService } from '../../core/services/category.service';
+import { PaymentMethodService } from '../../core/services/payment-method.service';
 import { Transaction } from '../../core/models/transaction.model';
 import { Category } from '../../core/models/category.model';
+import { PaymentMethod } from '../../core/models/payment-method.model';
 import { AuthService } from '../../core/services/auth.service';
 import { Router } from '@angular/router';
 
 @Component({
     selector: 'app-transactions',
     standalone: true,
-    imports: [CommonModule, ReactiveFormsModule, RouterLink],
+    imports: [CommonModule, ReactiveFormsModule, FormsModule, RouterLink],
     templateUrl: './transactions.component.html',
     styleUrl: './transactions.component.scss'
 })
 export class TransactionsComponent implements OnInit {
     transactions: Transaction[] = [];
     categories: Category[] = [];
+    paymentMethods: PaymentMethod[] = [];
     loading = true;
     showForm = false;
     submitting = false;
@@ -26,15 +30,37 @@ export class TransactionsComponent implements OnInit {
     user: { name: string; email: string } | null = null;
 
     form: FormGroup;
+    editingId: string | null = null;
 
+    amountDisplay = '';
+
+    categorySearch = '';
+    selectedCategory: Category | null = null;
+    showCategoryDropdown = false;
+    showCreateCategory = false;
+    newCategoryColor = '#6366f1';
+    creatingCategory = false;
+
+    readonly presetColors = [
+        '#6366f1', '#8b5cf6', '#ec4899', '#ef4444',
+        '#f97316', '#eab308', '#22c55e', '#14b8a6',
+        '#3b82f6', '#64748b'
+    ];
+
+    // Filtro de período
+    filterMode: 'month' | 'period' = 'month';
     currentMonth = new Date().getMonth() + 1;
     currentYear = new Date().getFullYear();
+    periodStart = '';
+    periodEnd = '';
+
     months = ['Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
         'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
     constructor(
         private transactionService: TransactionService,
         private categoryService: CategoryService,
+        private paymentMethodService: PaymentMethodService,
         private authService: AuthService,
         private router: Router,
         private fb: FormBuilder
@@ -42,10 +68,9 @@ export class TransactionsComponent implements OnInit {
         this.user = this.authService.getUser();
         this.form = this.fb.group({
             description: ['', [Validators.required, Validators.minLength(2)]],
-            amount: ['', [Validators.required, Validators.min(0.01)]],
+            amount: ['', [Validators.required]],
             type: ['EXPENSE', Validators.required],
-            transactionDate: [new Date().toISOString().split('T')[0], Validators.required],
-            categoryId: [''],
+            transactionDate: [this.todayLocal(), Validators.required],
             isRecurring: [false],
             paymentMethod: [''],
             installmentTotal: ['']
@@ -55,16 +80,48 @@ export class TransactionsComponent implements OnInit {
     ngOnInit(): void {
         this.loadTransactions();
         this.loadCategories();
+        this.loadPaymentMethods();
+    }
+
+    private todayLocal(): string {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
     loadTransactions(): void {
-        this.transactionService.findByPeriod(this.currentMonth, this.currentYear)
-            .subscribe({
+        this.loading = true;
+        if (this.filterMode === 'month') {
+            this.transactionService.findByPeriod(this.currentMonth, this.currentYear)
+                .subscribe({
+                    next: (data) => { this.transactions = data; this.loading = false; },
+                    error: () => this.loading = false
+                });
+        } else {
+            this.transactionService.findWithFilters({
+                startDate: this.periodStart || undefined,
+                endDate: this.periodEnd || undefined
+            }).subscribe({
                 next: (data) => { this.transactions = data; this.loading = false; },
                 error: () => this.loading = false
             });
+        }
     }
 
+    loadCategories(): void {
+        this.categoryService.findAll().subscribe({
+            next: (data) => this.categories = data,
+            error: () => { }
+        });
+    }
+
+    loadPaymentMethods(): void {
+        this.paymentMethodService.findAll().subscribe({
+            next: (data) => this.paymentMethods = data,
+            error: () => { }
+        });
+    }
+
+    // Navegação por mês
     prevMonth(): void {
         if (this.currentMonth > 1) this.currentMonth--;
         else { this.currentMonth = 12; this.currentYear--; }
@@ -77,11 +134,142 @@ export class TransactionsComponent implements OnInit {
         this.loadTransactions();
     }
 
-    loadCategories(): void {
-        this.categoryService.findAll().subscribe({
-            next: (data) => this.categories = data,
-            error: () => { }
+    setFilterMode(mode: 'month' | 'period'): void {
+        this.filterMode = mode;
+        if (mode === 'period') {
+            const today = this.todayLocal();
+            const firstDay = `${this.currentYear}-${String(this.currentMonth).padStart(2, '0')}-01`;
+            this.periodStart = firstDay;
+            this.periodEnd = today;
+        }
+        this.loadTransactions();
+    }
+
+    applyPeriodFilter(): void {
+        this.loadTransactions();
+    }
+
+    // Formulário
+    toggleForm(): void {
+        this.showForm = !this.showForm;
+        if (!this.showForm) this.resetForm();
+    }
+
+    editTransaction(tx: Transaction): void {
+        this.editingId = tx.id;
+        this.showForm = true;
+
+        this.selectedCategory = this.categories.find(c => c.id === tx.categoryId) || null;
+        this.categorySearch = this.selectedCategory?.name || '';
+
+        const formatted = tx.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        this.amountDisplay = formatted;
+
+        this.form.patchValue({
+            description: tx.description,
+            amount: formatted,
+            type: tx.type,
+            transactionDate: tx.transactionDate.split('T')[0],
+            isRecurring: tx.recurring,
+            paymentMethod: tx.paymentMethod || '',
+            installmentTotal: tx.installmentTotal?.toString() || ''
         });
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // Valor monetário
+    onAmountInput(event: Event): void {
+        const input = event.target as HTMLInputElement;
+        let value = input.value.replace(/[^\d,]/g, '');
+        const parts = value.split(',');
+        if (parts.length > 2) value = parts[0] + ',' + parts.slice(1).join('');
+        if (parts[1]?.length > 2) value = parts[0] + ',' + parts[1].slice(0, 2);
+        input.value = value;
+        this.amountDisplay = value;
+        this.form.get('amount')?.setValue(value, { emitEvent: false });
+    }
+
+    onAmountBlur(): void {
+        if (!this.amountDisplay) return;
+        let value = this.amountDisplay;
+        if (!value.includes(',')) {
+            value = value + ',00';
+        } else {
+            const parts = value.split(',');
+            if (!parts[1]) value = parts[0] + ',00';
+            else if (parts[1].length === 1) value = parts[0] + ',' + parts[1] + '0';
+        }
+        this.amountDisplay = value;
+        this.form.get('amount')?.setValue(value, { emitEvent: false });
+    }
+
+    // Combobox de categoria
+    get filteredCategories(): Category[] {
+        if (!this.categorySearch.trim()) return this.categories;
+        return this.categories.filter(c =>
+            c.name.toLowerCase().includes(this.categorySearch.toLowerCase())
+        );
+    }
+
+    get showCreateOption(): boolean {
+        const search = this.categorySearch.trim();
+        if (!search) return false;
+        return !this.categories.some(c => c.name.toLowerCase() === search.toLowerCase());
+    }
+
+    onCategorySearch(): void {
+        this.selectedCategory = null;
+        this.showCategoryDropdown = true;
+        this.showCreateCategory = false;
+    }
+
+    selectCategory(cat: Category): void {
+        this.selectedCategory = cat;
+        this.categorySearch = cat.name;
+        this.showCategoryDropdown = false;
+        this.showCreateCategory = false;
+    }
+
+    clearCategory(): void {
+        this.selectedCategory = null;
+        this.categorySearch = '';
+        this.showCategoryDropdown = false;
+        this.showCreateCategory = false;
+    }
+
+    onCategoryBlur(): void {
+        setTimeout(() => {
+            this.showCategoryDropdown = false;
+            if (!this.selectedCategory && !this.showCreateCategory) this.categorySearch = '';
+        }, 200);
+    }
+
+    startCreateCategory(): void {
+        this.showCreateCategory = true;
+        this.showCategoryDropdown = false;
+        this.newCategoryColor = this.presetColors[0];
+    }
+
+    confirmCreateCategory(): void {
+        const name = this.categorySearch.trim();
+        if (!name || this.creatingCategory) return;
+        this.creatingCategory = true;
+        this.categoryService.create({ name, color: this.newCategoryColor, icon: 'tag' }).subscribe({
+            next: (cat) => {
+                this.categories = [...this.categories, cat];
+                this.selectCategory(cat);
+                this.showCreateCategory = false;
+                this.creatingCategory = false;
+            },
+            error: () => this.creatingCategory = false
+        });
+    }
+
+    cancelCreateCategory(): void {
+        this.showCreateCategory = false;
+        this.categorySearch = '';
+        this.selectedCategory = null;
     }
 
     onSubmit(): void {
@@ -89,32 +277,55 @@ export class TransactionsComponent implements OnInit {
         this.submitting = true;
         this.error = '';
 
+        const amountValue = parseFloat(this.amountDisplay.replace(',', '.'));
+        if (isNaN(amountValue) || amountValue <= 0) {
+            this.error = 'Informe um valor válido';
+            this.submitting = false;
+            return;
+        }
+
         const value = this.form.value;
-        this.transactionService.create({
+        const payload = {
             description: value.description,
-            amount: parseFloat(value.amount),
+            amount: amountValue,
             type: value.type,
             transactionDate: value.transactionDate,
-            categoryId: value.categoryId || undefined,
+            categoryId: this.selectedCategory?.id || undefined,
             isRecurring: value.isRecurring,
             paymentMethod: value.paymentMethod || undefined,
             installmentTotal: value.installmentTotal ? parseInt(value.installmentTotal) : undefined,
-        }).subscribe({
+        };
+
+        const request$: Observable<unknown> = this.editingId
+            ? this.transactionService.update(this.editingId, payload)
+            : this.transactionService.create(payload);
+
+        request$.subscribe({
             next: () => {
-                this.form.reset({
-                    type: 'EXPENSE',
-                    transactionDate: new Date().toISOString().split('T')[0],
-                    isRecurring: false
-                });
+                this.resetForm();
                 this.showForm = false;
                 this.submitting = false;
                 this.loadTransactions();
             },
-            error: (err) => {
+            error: (err: { error?: { message?: string } }) => {
                 this.error = err.error?.message || 'Erro ao salvar transacao';
                 this.submitting = false;
             }
         });
+    }
+
+    private resetForm(): void {
+        this.form.reset({
+            type: 'EXPENSE',
+            transactionDate: this.todayLocal(),
+            isRecurring: false
+        });
+        this.amountDisplay = '';
+        this.selectedCategory = null;
+        this.categorySearch = '';
+        this.editingId = null;
+        this.showCreateCategory = false;
+        this.error = '';
     }
 
     delete(id: string): void {
@@ -130,11 +341,6 @@ export class TransactionsComponent implements OnInit {
             style: 'currency',
             currency: 'BRL'
         }).format(value);
-    }
-
-    getMonthName(): string {
-        return new Date(this.currentYear, this.currentMonth - 1)
-            .toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     }
 
     logout(): void {

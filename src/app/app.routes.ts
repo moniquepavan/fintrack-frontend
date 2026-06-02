@@ -36,6 +36,18 @@ export const routes: Routes = [
       import('./features/categories/categories.component').then(m => m.CategoriesComponent)
   },
   {
+    path: 'payment-methods',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/payment-methods/payment-methods.component').then(m => m.PaymentMethodsComponent)
+  },
+  {
+    path: 'cards',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/cards/cards.component').then(m => m.CardsComponent)
+  },
+  {
     path: '**',
     redirectTo: 'login'
   }
