@@ -6,9 +6,11 @@ import { Observable } from 'rxjs';
 import { TransactionService } from '../../core/services/transaction.service';
 import { CategoryService } from '../../core/services/category.service';
 import { PaymentMethodService } from '../../core/services/payment-method.service';
+import { CardService } from '../../core/services/card.service';
 import { Transaction } from '../../core/models/transaction.model';
 import { Category } from '../../core/models/category.model';
 import { PaymentMethod } from '../../core/models/payment-method.model';
+import { Card } from '../../core/models/card.model';
 import { AuthService } from '../../core/services/auth.service';
 import { Router } from '@angular/router';
 
@@ -23,6 +25,7 @@ export class TransactionsComponent implements OnInit {
     transactions: Transaction[] = [];
     categories: Category[] = [];
     paymentMethods: PaymentMethod[] = [];
+    cards: Card[] = [];
     loading = true;
     showForm = false;
     submitting = false;
@@ -31,6 +34,8 @@ export class TransactionsComponent implements OnInit {
 
     form: FormGroup;
     editingId: string | null = null;
+    editingInstallmentGroupId: string | null = null;
+    updateFollowing = false;
 
     amountDisplay = '';
 
@@ -40,6 +45,7 @@ export class TransactionsComponent implements OnInit {
     showCreateCategory = false;
     newCategoryColor = '#6366f1';
     creatingCategory = false;
+    categoryHighlightedIndex = -1;
 
     readonly presetColors = [
         '#6366f1', '#8b5cf6', '#ec4899', '#ef4444',
@@ -54,13 +60,19 @@ export class TransactionsComponent implements OnInit {
     periodStart = '';
     periodEnd = '';
 
-    months = ['Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
+    // Filtros adicionais
+    filterCategoryId = '';
+    filterPaymentMethod = '';
+    filterCardId = '';
+
+    months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
         'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
     constructor(
         private transactionService: TransactionService,
         private categoryService: CategoryService,
         private paymentMethodService: PaymentMethodService,
+        private cardService: CardService,
         private authService: AuthService,
         private router: Router,
         private fb: FormBuilder
@@ -73,6 +85,7 @@ export class TransactionsComponent implements OnInit {
             transactionDate: [this.todayLocal(), Validators.required],
             isRecurring: [false],
             paymentMethod: [''],
+            cardId: [''],
             installmentTotal: ['']
         });
     }
@@ -81,11 +94,23 @@ export class TransactionsComponent implements OnInit {
         this.loadTransactions();
         this.loadCategories();
         this.loadPaymentMethods();
+        this.loadCards();
     }
 
     private todayLocal(): string {
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    private defaultDateForContext(): string {
+        if (this.filterMode === 'period') {
+            return this.periodStart || this.todayLocal();
+        }
+        const today = new Date();
+        const isCurrentMonth = this.currentMonth === today.getMonth() + 1
+            && this.currentYear === today.getFullYear();
+        if (isCurrentMonth) return this.todayLocal();
+        return `${this.currentYear}-${String(this.currentMonth).padStart(2, '0')}-01`;
     }
 
     loadTransactions(): void {
@@ -121,17 +146,32 @@ export class TransactionsComponent implements OnInit {
         });
     }
 
+    loadCards(): void {
+        this.cardService.findAll().subscribe({
+            next: (data) => this.cards = data,
+            error: () => { }
+        });
+    }
+
     // Navegação por mês
     prevMonth(): void {
         if (this.currentMonth > 1) this.currentMonth--;
         else { this.currentMonth = 12; this.currentYear--; }
         this.loadTransactions();
+        this.updateFormDateIfNew();
     }
 
     nextMonth(): void {
         if (this.currentMonth < 12) this.currentMonth++;
         else { this.currentMonth = 1; this.currentYear++; }
         this.loadTransactions();
+        this.updateFormDateIfNew();
+    }
+
+    private updateFormDateIfNew(): void {
+        if (this.showForm && !this.editingId) {
+            this.form.patchValue({ transactionDate: this.defaultDateForContext() });
+        }
     }
 
     setFilterMode(mode: 'month' | 'period'): void {
@@ -152,11 +192,17 @@ export class TransactionsComponent implements OnInit {
     // Formulário
     toggleForm(): void {
         this.showForm = !this.showForm;
-        if (!this.showForm) this.resetForm();
+        if (!this.showForm) {
+            this.resetForm();
+        } else {
+            this.form.patchValue({ transactionDate: this.defaultDateForContext() });
+        }
     }
 
     editTransaction(tx: Transaction): void {
         this.editingId = tx.id;
+        this.editingInstallmentGroupId = tx.installmentGroupId || null;
+        this.updateFollowing = false;
         this.showForm = true;
 
         this.selectedCategory = this.categories.find(c => c.id === tx.categoryId) || null;
@@ -172,6 +218,7 @@ export class TransactionsComponent implements OnInit {
             transactionDate: tx.transactionDate.split('T')[0],
             isRecurring: tx.recurring,
             paymentMethod: tx.paymentMethod || '',
+            cardId: tx.cardId || '',
             installmentTotal: tx.installmentTotal?.toString() || ''
         });
 
@@ -205,6 +252,41 @@ export class TransactionsComponent implements OnInit {
     }
 
     // Combobox de categoria
+    get displayedTransactions(): Transaction[] {
+        return this.transactions.filter(tx => {
+            if (this.filterCategoryId && tx.categoryId !== this.filterCategoryId) return false;
+            if (this.filterPaymentMethod && tx.paymentMethod !== this.filterPaymentMethod) return false;
+            if (this.filterCardId && tx.cardId !== this.filterCardId) return false;
+            return true;
+        });
+    }
+
+    get hasActiveFilters(): boolean {
+        return !!(this.filterCategoryId || this.filterPaymentMethod || this.filterCardId);
+    }
+
+    get totalIncome(): number {
+        return this.displayedTransactions
+            .filter(t => t.type === 'INCOME')
+            .reduce((s, t) => s + t.amount, 0);
+    }
+
+    get totalExpense(): number {
+        return this.displayedTransactions
+            .filter(t => t.type === 'EXPENSE')
+            .reduce((s, t) => s + t.amount, 0);
+    }
+
+    get balance(): number {
+        return this.totalIncome - this.totalExpense;
+    }
+
+    clearFilters(): void {
+        this.filterCategoryId = '';
+        this.filterPaymentMethod = '';
+        this.filterCardId = '';
+    }
+
     get filteredCategories(): Category[] {
         if (!this.categorySearch.trim()) return this.categories;
         return this.categories.filter(c =>
@@ -222,6 +304,41 @@ export class TransactionsComponent implements OnInit {
         this.selectedCategory = null;
         this.showCategoryDropdown = true;
         this.showCreateCategory = false;
+        this.categoryHighlightedIndex = -1;
+    }
+
+    onCategoryKeydown(event: KeyboardEvent): void {
+        if (this.showCreateCategory) return;
+
+        // index 0 = "Sem categoria", 1..n = categorias, n+1 = "+ Criar" (se existir)
+        const total = 1 + this.filteredCategories.length + (this.showCreateOption ? 1 : 0);
+
+        switch (event.key) {
+            case 'ArrowDown':
+                event.preventDefault();
+                this.showCategoryDropdown = true;
+                this.categoryHighlightedIndex = Math.min(this.categoryHighlightedIndex + 1, total - 1);
+                break;
+            case 'ArrowUp':
+                event.preventDefault();
+                this.categoryHighlightedIndex = Math.max(this.categoryHighlightedIndex - 1, 0);
+                break;
+            case 'Enter':
+                event.preventDefault();
+                if (!this.showCategoryDropdown) { this.showCategoryDropdown = true; return; }
+                if (this.categoryHighlightedIndex === 0) {
+                    this.clearCategory();
+                } else if (this.categoryHighlightedIndex >= 1 && this.categoryHighlightedIndex <= this.filteredCategories.length) {
+                    this.selectCategory(this.filteredCategories[this.categoryHighlightedIndex - 1]);
+                } else if (this.showCreateOption) {
+                    this.startCreateCategory();
+                }
+                break;
+            case 'Escape':
+                this.showCategoryDropdown = false;
+                this.categoryHighlightedIndex = -1;
+                break;
+        }
     }
 
     selectCategory(cat: Category): void {
@@ -229,6 +346,7 @@ export class TransactionsComponent implements OnInit {
         this.categorySearch = cat.name;
         this.showCategoryDropdown = false;
         this.showCreateCategory = false;
+        this.categoryHighlightedIndex = -1;
     }
 
     clearCategory(): void {
@@ -236,6 +354,7 @@ export class TransactionsComponent implements OnInit {
         this.categorySearch = '';
         this.showCategoryDropdown = false;
         this.showCreateCategory = false;
+        this.categoryHighlightedIndex = -1;
     }
 
     onCategoryBlur(): void {
@@ -291,7 +410,9 @@ export class TransactionsComponent implements OnInit {
             type: value.type,
             transactionDate: value.transactionDate,
             categoryId: this.selectedCategory?.id || undefined,
+            cardId: value.cardId || undefined,
             isRecurring: value.isRecurring,
+            updateFollowing: this.updateFollowing,
             paymentMethod: value.paymentMethod || undefined,
             installmentTotal: value.installmentTotal ? parseInt(value.installmentTotal) : undefined,
         };
@@ -317,13 +438,17 @@ export class TransactionsComponent implements OnInit {
     private resetForm(): void {
         this.form.reset({
             type: 'EXPENSE',
-            transactionDate: this.todayLocal(),
-            isRecurring: false
+            transactionDate: this.defaultDateForContext(),
+            isRecurring: false,
+            paymentMethod: '',
+            cardId: ''
         });
         this.amountDisplay = '';
         this.selectedCategory = null;
         this.categorySearch = '';
         this.editingId = null;
+        this.editingInstallmentGroupId = null;
+        this.updateFollowing = false;
         this.showCreateCategory = false;
         this.error = '';
     }

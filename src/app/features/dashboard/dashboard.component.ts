@@ -1,33 +1,49 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { TransactionService } from '../../core/services/transaction.service';
+import { CategoryService } from '../../core/services/category.service';
+import { PaymentMethodService } from '../../core/services/payment-method.service';
+import { CardService } from '../../core/services/card.service';
 import { AuthService } from '../../core/services/auth.service';
-import { DashboardData, Transaction } from '../../core/models/transaction.model';
+import { Transaction } from '../../core/models/transaction.model';
+import { Category } from '../../core/models/category.model';
+import { PaymentMethod } from '../../core/models/payment-method.model';
+import { Card } from '../../core/models/card.model';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss'
 })
 export class DashboardComponent implements OnInit {
-  dashboard: DashboardData | null = null;
   transactions: Transaction[] = [];
+  categories: Category[] = [];
+  paymentMethods: PaymentMethod[] = [];
+  cards: Card[] = [];
   loading = true;
   user: { name: string; email: string } | null = null;
 
   currentMonth = new Date().getMonth() + 1;
   currentYear = new Date().getFullYear();
 
-  months = ['Janeiro','Fevereiro','Marco','Abril','Maio','Junho',
+  filterCategoryId = '';
+  filterPaymentMethod = '';
+  filterCardId = '';
+
+  months = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
             'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   monthsShort = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   years = [2023, 2024, 2025, 2026, 2027];
 
   constructor(
     private transactionService: TransactionService,
+    private categoryService: CategoryService,
+    private paymentMethodService: PaymentMethodService,
+    private cardService: CardService,
     private authService: AuthService,
     private router: Router
   ) {
@@ -36,18 +52,52 @@ export class DashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
+    this.categoryService.findAll().subscribe({ next: d => this.categories = d, error: () => {} });
+    this.paymentMethodService.findAll().subscribe({ next: d => this.paymentMethods = d, error: () => {} });
+    this.cardService.findAll().subscribe({ next: d => this.cards = d, error: () => {} });
   }
 
   load(): void {
     this.loading = true;
-    this.transactionService.getDashboard(this.currentMonth, this.currentYear)
-      .subscribe({ next: (data) => this.dashboard = data });
+    this.transactionService.findByPeriod(this.currentMonth, this.currentYear).subscribe({
+      next: (data) => { this.transactions = data; this.loading = false; },
+      error: () => this.loading = false
+    });
+  }
 
-    this.transactionService.findByPeriod(this.currentMonth, this.currentYear)
-      .subscribe({
-        next: (data) => { this.transactions = data.slice(0, 5); this.loading = false; },
-        error: () => this.loading = false
-      });
+  get displayed(): Transaction[] {
+    return this.transactions.filter(tx => {
+      if (this.filterCategoryId && tx.categoryId !== this.filterCategoryId) return false;
+      if (this.filterPaymentMethod && tx.paymentMethod !== this.filterPaymentMethod) return false;
+      if (this.filterCardId && tx.cardId !== this.filterCardId) return false;
+      return true;
+    });
+  }
+
+  get recent(): Transaction[] {
+    return this.displayed.slice(0, 5);
+  }
+
+  get totalIncome(): number {
+    return this.displayed.filter(t => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0);
+  }
+
+  get totalExpense(): number {
+    return this.displayed.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
+  }
+
+  get balance(): number {
+    return this.totalIncome - this.totalExpense;
+  }
+
+  get hasActiveFilters(): boolean {
+    return !!(this.filterCategoryId || this.filterPaymentMethod || this.filterCardId);
+  }
+
+  clearFilters(): void {
+    this.filterCategoryId = '';
+    this.filterPaymentMethod = '';
+    this.filterCardId = '';
   }
 
   prevMonth(): void {

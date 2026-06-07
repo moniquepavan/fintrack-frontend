@@ -11,6 +11,8 @@ export interface Transaction {
   categoryName?: string;
   categoryColor?: string;
   categoryIcon?: string;
+  cardId?: string;
+  cardName?: string;
   recurring: boolean;
   recurrenceRule?: string;
   paymentMethod?: string;
@@ -25,7 +27,9 @@ export interface TransactionRequest {
   type: TransactionType;
   transactionDate: string;
   categoryId?: string;
+  cardId?: string;
   isRecurring: boolean;
+  updateFollowing?: boolean;
   recurrenceRule?: string;
   paymentMethod?: string;
   installmentTotal?: number;

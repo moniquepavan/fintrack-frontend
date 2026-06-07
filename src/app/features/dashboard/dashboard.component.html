@@ -1,41 +1,37 @@
 <div class="min-h-screen bg-gray-50">
   <header class="bg-white border-b border-gray-100 px-6 py-4">
-  <div class="max-w-4xl mx-auto flex items-center justify-between">
-    <a routerLink="/dashboard" class="text-lg font-medium tracking-tight text-gray-900 hover:text-gray-600 transition-colors">fintrack</a>
-    <div class="flex items-center gap-1">
-      <a routerLink="/dashboard" class="text-sm px-3 py-1.5 rounded-lg bg-gray-100 text-gray-900 font-medium transition-colors">Dashboard</a>
-      <a routerLink="/transactions" class="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">Transacoes</a>
-      <a routerLink="/categories" class="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">Categorias</a>
-      <a routerLink="/payment-methods" class="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">Pagamentos</a>
-      <a routerLink="/cards" class="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">Cartoes</a>
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+      <a routerLink="/dashboard" class="text-lg font-medium tracking-tight text-gray-900 hover:text-gray-600 transition-colors">fintrack</a>
+      <div class="flex items-center gap-1">
+        <a routerLink="/dashboard" class="text-sm px-3 py-1.5 rounded-lg bg-gray-100 text-gray-900 font-medium transition-colors">Dashboard</a>
+        <a routerLink="/transactions" class="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">Transações</a>
+        <a routerLink="/categories" class="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">Categorias</a>
+        <a routerLink="/payment-methods" class="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">Pagamentos</a>
+        <a routerLink="/cards" class="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">Cartões</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-gray-500">{{ user?.name }}</span>
+        <button (click)="logout()" class="text-xs text-gray-400 hover:text-gray-600 transition-colors">Sair</button>
+      </div>
     </div>
-    <div class="flex items-center gap-3">
-      <span class="text-sm text-gray-500">{{ user?.name }}</span>
-      <button (click)="logout()" class="text-xs text-gray-400 hover:text-gray-600 transition-colors">Sair</button>
-    </div>
-  </div>
-</header>
+  </header>
 
   <main class="max-w-4xl mx-auto px-6 py-8">
 
+    <!-- Navegação de período -->
     <div class="flex items-center gap-3 mb-4">
-      <button (click)="prevMonth()" class="w-8 h-8 flex items-center justify-center border border-gray-200 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">
-        &lt;
-      </button>
+      <button (click)="prevMonth()" class="w-8 h-8 flex items-center justify-center border border-gray-200 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">&lt;</button>
       <div class="flex-1">
         <h2 class="text-base font-medium text-gray-900">{{ months[currentMonth - 1] }} de {{ currentYear }}</h2>
-        <p class="text-xs text-gray-400">01/{{ currentMonth | number:'2.0' }} ate {{ currentMonth | number:'2.0' }}/{{ currentYear }}</p>
       </div>
       <select (change)="selectYear(+$any($event.target).value)"
         class="text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
         <option *ngFor="let y of years" [value]="y" [selected]="y === currentYear">{{ y }}</option>
       </select>
-      <button (click)="nextMonth()" class="w-8 h-8 flex items-center justify-center border border-gray-200 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">
-        &gt;
-      </button>
+      <button (click)="nextMonth()" class="w-8 h-8 flex items-center justify-center border border-gray-200 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">&gt;</button>
     </div>
 
-    <div class="flex gap-2 mb-6 flex-wrap">
+    <div class="flex gap-2 mb-4 flex-wrap">
       <button *ngFor="let m of monthsShort; let i = index"
         (click)="selectMonth(i + 1)"
         class="text-xs px-3 py-1 rounded-full border transition-colors"
@@ -48,39 +44,63 @@
       </button>
     </div>
 
+    <!-- Filtros -->
+    <div class="flex items-center gap-2 mb-6 flex-wrap">
+      <select [(ngModel)]="filterCategoryId"
+        class="text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-gray-400">
+        <option value="">Todas as categorias</option>
+        <option *ngFor="let cat of categories" [value]="cat.id">{{ cat.name }}</option>
+      </select>
+      <select [(ngModel)]="filterPaymentMethod"
+        class="text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-gray-400">
+        <option value="">Todas as formas de pagamento</option>
+        <option *ngFor="let pm of paymentMethods" [value]="pm.name">{{ pm.name }}</option>
+      </select>
+      <select [(ngModel)]="filterCardId"
+        class="text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-gray-400">
+        <option value="">Todos os cartões</option>
+        <option *ngFor="let card of cards" [value]="card.id">{{ card.name }}</option>
+      </select>
+      <button *ngIf="hasActiveFilters" (click)="clearFilters()"
+        class="text-xs px-2 py-1.5 text-gray-400 hover:text-gray-700 border border-gray-200 rounded-lg transition-colors">
+        Limpar filtros
+      </button>
+    </div>
+
+    <!-- Totais -->
     <div class="grid grid-cols-3 gap-3 mb-6">
       <div class="bg-white rounded-xl border border-gray-100 p-4">
         <p class="text-xs text-gray-400 mb-1">Receitas</p>
-        <p class="text-xl font-medium text-green-600 font-mono">
-          {{ dashboard ? formatCurrency(dashboard.totalIncome) : 'R$ 0,00' }}
-        </p>
+        <p class="text-xl font-medium text-green-600 font-mono">{{ formatCurrency(totalIncome) }}</p>
       </div>
       <div class="bg-white rounded-xl border border-gray-100 p-4">
         <p class="text-xs text-gray-400 mb-1">Despesas</p>
-        <p class="text-xl font-medium text-red-500 font-mono">
-          {{ dashboard ? formatCurrency(dashboard.totalExpense) : 'R$ 0,00' }}
-        </p>
+        <p class="text-xl font-medium text-red-500 font-mono">{{ formatCurrency(totalExpense) }}</p>
       </div>
       <div class="bg-white rounded-xl border border-gray-100 p-4">
         <p class="text-xs text-gray-400 mb-1">Saldo</p>
         <p class="text-xl font-medium font-mono"
-           [class.text-green-600]="dashboard && dashboard.balance >= 0"
-           [class.text-red-500]="dashboard && dashboard.balance < 0">
-          {{ dashboard ? formatCurrency(dashboard.balance) : 'R$ 0,00' }}
+           [class.text-green-600]="balance >= 0"
+           [class.text-red-500]="balance < 0">
+          {{ formatCurrency(balance) }}
         </p>
       </div>
     </div>
 
+    <!-- Últimas transações -->
     <div class="bg-white rounded-xl border border-gray-100">
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-50">
-        <h3 class="text-sm font-medium text-gray-700">Ultimas transacoes</h3>
+        <h3 class="text-sm font-medium text-gray-700">
+          Últimas transações
+          <span *ngIf="hasActiveFilters" class="text-xs text-gray-400 font-normal ml-1">({{ displayed.length }} filtradas)</span>
+        </h3>
         <a routerLink="/transactions" class="text-xs text-gray-400 hover:text-gray-600 transition-colors">Ver todas</a>
       </div>
       <div *ngIf="loading" class="px-5 py-8 text-center text-sm text-gray-400">Carregando...</div>
-      <div *ngIf="!loading && transactions.length === 0" class="px-5 py-8 text-center text-sm text-gray-400">
-        Nenhuma transacao este mes
+      <div *ngIf="!loading && recent.length === 0" class="px-5 py-8 text-center text-sm text-gray-400">
+        Nenhuma transação no período
       </div>
-      <div *ngFor="let tx of transactions; let last = last"
+      <div *ngFor="let tx of recent; let last = last"
            class="flex items-center gap-3 px-5 py-3"
            [class.border-b]="!last" [class.border-gray-50]="!last">
         <div class="w-2 h-2 rounded-full flex-shrink-0"
@@ -90,6 +110,8 @@
           <p class="text-sm text-gray-800 truncate">{{ tx.description }}</p>
           <p class="text-xs text-gray-400">
             {{ tx.categoryName || 'Sem categoria' }}
+            <span *ngIf="tx.cardName"> · {{ tx.cardName }}</span>
+            <span *ngIf="tx.paymentMethod"> · {{ tx.paymentMethod }}</span>
             <span *ngIf="tx.installmentNumber"> · {{ tx.installmentNumber }}/{{ tx.installmentTotal }}</span>
           </p>
         </div>
