@@ -48,6 +48,12 @@ export const routes: Routes = [
       import('./features/cards/cards.component').then(m => m.CardsComponent)
   },
   {
+    path: 'settings',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/settings/settings.component').then(m => m.SettingsComponent)
+  },
+  {
     path: '**',
     redirectTo: 'login'
   }
